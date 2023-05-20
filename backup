@@ -1,0 +1,217 @@
+import requests
+import json
+import pickle
+import random
+import task
+from time import sleep
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from datetime import datetime
+from fake_useragent import UserAgent
+
+"""
+    Первая цель для нас это vktarget.ru, у них стоит система которая может распознать бота, но если бот не будет стучаться массово, допустим раз в пол часа/час
+    то мы останемся не замеченными. Главное не кому особо не болтать о такой схеме, ибо она в скором времени потеряет свою актульность.
+
+    Как будем понимать какое задание выполнили и отправлять его на проверку?
+    Всё просто, на сайте менятся текст и цвет виджета, без разницы какое это было задание, на основе алгоритмов будет происходить проверка всех целей
+"""
+
+def save_cookeis(*, name, url):
+    """
+        Данный метод будет сохранять куки различных сайтов, пусть пока лежит в таком виде, это самая бичовая версия. Тестим
+    """
+    driver = webdriver.Chrome('./chromedriver')
+    driver.get(url)
+
+    driver.refresh()
+
+    input('Save cookies: ')
+
+    pickle.dump(driver.get_cookies(), open(f"./cookies/{name}","wb"))  
+
+    return
+
+class Vktarget:
+    def __init__(self):
+        self.urls = "https://vktarget.ru/list/"
+        
+        self.options = webdriver.ChromeOptions()
+        self.options.headless = False
+        self.options.add_argument("--disable-blink-features=AutomationControlled")
+
+        self.driver = webdriver.Chrome('./chromedriver', options=self.options)
+        self.driver.get(self.urls)
+
+    def vktarget(self):
+        """
+            Функция которая будет слушать vktarget.ru и на основе прослушаного примнимать решение, вероятно в недалёком будущем будет реализован класс. Ибо так проще!
+        """
+
+        sleep(2)
+        for cookie in pickle.load(open("./cookies/update.pkl","rb")):
+            self.driver.add_cookie(cookie)
+        
+        self.driver.refresh()
+
+        sleep(2)
+        self.driver.implicitly_wait(5)
+        # with open('test.html', 'w') as file:
+        #     file.write(driver.page_source)
+
+        # входим бесконечный цикл и отправляем данные на обработку через определённое время, но можно сделать и рандомоно и через соответствующую библиотеку
+        count_time = 0
+        # second_timeout здесь нужен для того чтобы у нас корретно работал таймер, эта переменная забирает целое значение из цикла у функции которое отдаёт ранодмное значение в диапозоне 
+        second_timeout = 5
+        while True:
+            sleep(1)
+
+            count_time += 1
+            if count_time == second_timeout: # count_time и есть та переменная в которой указывается таймер
+                
+                # проверяем домен, если есть задние, выполняем, если нет то возращаемся
+                second_timeout = random.randint(150, 300)
+                self.chek_domain(self.driver.page_source)
+                count_time = 0
+                
+                # проверка на выполненные задания
+                
+                # смотрим ID`ники вкладок, переключаемся на нужную нам и закрывем её
+                # self.driver.switch_to.window(self.driver.window_handles[1])
+                # self.driver.close()
+                self.driver.switch_to.window(self.driver.window_handles[0])
+
+                self.finish()
+            
+        # при первой какой либо ошибке, то есть когда падает скрипт, стоит проверить как работает авторизация, ведь куки изменчивы, поэтому надо задуматься о реализации входа
+        # на портал, то есть через исключение
+
+    def chek_domain(self, page_html):
+        """
+            Функция для проверки доменого имени, далее в цикле уже будет происходить отбор в определённую (другую) функцию 
+        """
+        
+        # with open('./other_file/test_best.html') as file:
+        #     src = file.read()
+
+        soup = BeautifulSoup(page_html, 'lxml')
+        try:
+            bais_task = soup.find('div', {'class':'tabs__content-container full-width'}).find_all('div', {'class':'mdl-grid available__row bb-grey-1 pa-0'})
+        except Exception as ex:
+            print("Надо обновить куки")
+        
+        ##################################
+        # непосредственно этот цикл и просматривает домены и название задачи, название задачи тоже очень важно
+        c = 0
+        for i in bais_task:
+            try:
+                title_task = i.find('span').text
+                task_url = i.find('a', {'class':'blue--text underline'}).get('href').split('/')[2]
+
+                print(title_task, task_url)
+                b = [title_task, task_url]
+                
+                with open("screen", 'a') as f:
+                    f.write(str(b))
+            except:
+                continue
+
+            if task_url == "vk.com":
+                self.driver.implicitly_wait(10)
+                
+                # условоие проверяет выполненное задание или нет, чтобы не выполнять то что уже выполнено :)
+                if i.find('button').text.strip() != "ПРОВЕРЕНО":
+                    self.driver.find_element(By.CLASS_NAME, "available__table-container").find_elements(By.TAG_NAME, "a")[c].click()
+                    
+                    # переключаемся на окно для выполнения задания, после его окончания выходим их этой вкладки (закрываем) и идём на проверку
+                    self.driver.switch_to.window(self.driver.window_handles[1])
+
+                    self.vk_task(urls=i.find('a', {'class':'blue--text underline'}).get('href'), title_tasks=title_task)
+                    print(i.find('a', {'class':'blue--text underline'}).get('href'))
+
+                    # финиш наверное будет правилей вызывать здесь 
+            else:
+                print("No info")
+
+            c += 1
+
+    #### дальше будут идти задания, но будет лучше если для задний будет отдельный класс ####
+
+    def finish(self):
+        """
+            Функция которая отвечает за проверку выполнения задания
+        """
+        
+        # driver = webdriver.Chrome('./chromedriver')
+
+        self.driver.implicitly_wait(10)
+
+        s = self.driver.find_element(By.CLASS_NAME, "full-width").find_elements(By.TAG_NAME, "button")
+        for i in s:
+            try:
+                if i.text.strip() == "ПРОВЕРИТЬ":
+                    sleep(3)
+                
+                    self.driver.find_element(By.CLASS_NAME, "full-width").find_element(By.TAG_NAME, "button").click()
+            except:
+                print("Skip button")
+                continue
+                
+    def vk_task(self, urls="https://vk.com", title_tasks: str = None):
+        """
+            Этот метод выполняет вход в вк который мы ему зададим, куки почему то он отвергает, поэтому юзаем обычную авторзацию
+        """
+
+        # driver = webdriver.Chrome('./chromedriver')
+        
+        self.driver.implicitly_wait(10)
+            
+        self.driver.get("https://vk.com")
+
+        self.driver.implicitly_wait(10)
+        try:
+            if news := self.driver.find_element(By.CLASS_NAME, "narrow_column").find_element(By.TAG_NAME, "a"):
+                print(news.text.strip())
+        except:
+            input_login = self.driver.find_element(By.XPATH, '//*[@id="index_email"]')
+            input_login.send_keys('')
+            input_login.send_keys(Keys.ENTER)
+            sleep(5)
+            self.driver.refresh() 
+            
+            # input()
+            input_password = self.driver.find_element(By.XPATH, '//*[@id="root"]/div/div/div/div/div[2]/div/div/div/form/div[1]/div[3]/div[1]/div/input')
+            input_password.send_keys("")
+            sleep(1)
+            input_password.send_keys(Keys.ENTER)        
+        
+        sleep(3)
+        self.driver.get(urls)
+        
+        try:
+            self.driver.implicitly_wait(5)
+            # В ПРОЧЕМ ЭТА ФУНКЦИЯ РАБОТАЕТ ТОЛЬКО С ВК И ПОДПИСЫВАЕТСЯ/ВСТУПАЕТ В ПАБЛИКИ #
+            #######################эта строчка кода подписывается на паблики или вступает в сообщество, если это группа#######################
+            button_target = self.driver.find_element(By.CLASS_NAME, "PageCover__actions").find_elements(By.CLASS_NAME, "FlatButton")[-1].click()
+            print(button_target)
+            ##################################################################################################################################
+        except:
+            try:
+                self.driver.implicitly_wait(5)
+                self.driver.find_element(By.CLASS_NAME, "page_block").find_element(By.TAG_NAME, "button").click()
+            except:
+                print('Error forward')
+                with open("./debug/FAIL_vk_task.html", "w") as file:
+                    file.write(self.driver.page_source)
+                
+        sleep(2)
+
+        self.driver.close()
+
+def main():
+    Vktarget().vktarget()
+
+if __name__ == '__main__':
+    main()
