@@ -4,3 +4,7 @@ If someone is interested in this idea or some part of the code, then he can use 
 
 ### Useful links:
     https://chromedriver.chromium.org/downloads
+
+-----
+
+I apologize in advance for the bad code, this is an old project, I decided to upload it here as a result, maybe someone will need it
